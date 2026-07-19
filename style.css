@@ -148,7 +148,9 @@ button:disabled {
   backface-visibility: hidden;
   border: 2px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-  transition: box-shadow 0.6s ease;
+  transition:
+    box-shadow 0.6s ease,
+    filter 0.6s ease;
 }
 
 .card-back {
@@ -297,43 +299,53 @@ button:disabled {
   box-shadow:
     0 8px 20px rgba(0, 0, 0, 0.35),
     0 0 30px rgba(255, 40, 40, 0.8);
+  filter: grayscale(0.35) brightness(0.85);
 }
 
-.center-display.result-lose.animation .center-cards {
-  animation: loseShake 0.45s ease;
-  transform: rotateX(18deg) scale(0.9) 0.75s;
+/* only added once the cards have actually landed in the center (see JS) so
+   the shake is visible instead of being masked by the in-flight transform */
+.center-cards.shake {
+  animation: loseShake 0.5s ease;
 }
 
 @keyframes loseShake {
   0% {
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
   }
   15% {
-    transform: translateX(-12px);
+    transform: translateX(-12px) scale(0.97);
   }
   30% {
-    transform: translateX(12px);
+    transform: translateX(12px) scale(0.97);
   }
   45% {
-    transform: translateX(-8px);
+    transform: translateX(-8px) scale(0.97);
   }
   60% {
-    transform: translateX(8px);
+    transform: translateX(8px) scale(0.97);
   }
   75% {
-    transform: translateX(-4px);
+    transform: translateX(-4px) scale(1);
   }
   100% {
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
   }
+}
+
+.lose-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  animation: loseFlash 0.9s ease forwards;
 }
 
 @keyframes loseFlash {
   0% {
     background: rgba(255, 40, 40, 0);
   }
-  50% {
-    background: rgba(255, 40, 40, 0.4);
+  30% {
+    background: rgba(255, 40, 40, 0.35);
   }
   100% {
     background: rgba(255, 40, 40, 0);

@@ -1,4 +1,4 @@
-// global constants
+// global variables
 const STATE = {
   PLAYING: 'playing',
   REVIEW: 'review',
@@ -211,9 +211,20 @@ function buildCardElements() {
 
       card.classList.add('flipped');
 
+      // lock in the selection (and block further clicks) immediately, even
+      // though the card only visually flies to its slot a bit later
+      const slotIndex = flippedCards.length;
+      flippedCards.push(card);
+      const isThird = flippedCards.length === 3;
+
+      if (isThird) {
+        state = STATE.COLLECTING;
+        updateNewRoundButton();
+      }
+
       setTimeout(() => {
         const grid = document.getElementById('grid');
-        const slot = document.querySelectorAll('.slot')[flippedCards.length];
+        const slot = document.querySelectorAll('.slot')[slotIndex];
 
         const index = [...grid.children].indexOf(card);
 
@@ -225,11 +236,7 @@ function buildCardElements() {
 
         setTimeout(() => slot.classList.add('hidden'), 650);
 
-        flippedCards.push(card);
-
-        if (flippedCards.length === 3) {
-          state = STATE.COLLECTING;
-          updateNewRoundButton();
+        if (isThird) {
           setTimeout(collectAndReveal, 650);
         }
       }, 650);
@@ -291,9 +298,15 @@ function revealCenter() {
   applyResultEffects(result);
 
   flipMoveBatch(flippedCards, centerCards, () => {
-    console.log('reveal done');
     state = STATE.REVIEW;
     updateNewRoundButton();
+
+    if (result < 0) {
+      // trigger the shake only now: while the cards are still flying, the
+      // inline FLIP transform would just override/hide a CSS animation
+      centerCards.classList.add('shake');
+      setTimeout(() => centerCards.classList.remove('shake'), 500);
+    }
   });
 }
 
@@ -303,7 +316,7 @@ function applyResultEffects(result) {
 
   setMoney(money + result);
 
-  message.textContent = result >= 0 ? `Gewinn: +${result}` : `Verlust: ${result}`;
+  message.textContent = result >= 0 ? `Gewinn: +${result}€` : `Verlust: ${result}€`;
   message.classList.remove('win', 'lose');
   message.classList.add(result >= 0 ? 'win' : 'lose');
 
@@ -319,6 +332,9 @@ function applyResultEffects(result) {
 }
 
 function evaluate(flippedCards) {
+  const STAKE = 2;
+  const PAYOUT = { triple: 10, pair: 4, none: 1 };
+
   const counts = {};
 
   for (const card of flippedCards) {
@@ -326,15 +342,17 @@ function evaluate(flippedCards) {
     counts[color] = (counts[color] || 0) + 1;
   }
 
-  if (Object.values(counts).includes(3)) return 50;
-  if (Object.values(counts).includes(2)) return 20;
-  return -10;
+  let payout = PAYOUT.none;
+  if (Object.values(counts).includes(3)) payout = PAYOUT.triple;
+  else if (Object.values(counts).includes(2)) payout = PAYOUT.pair;
+
+  return payout - STAKE;
 }
 
 function setMoney(value) {
   money = value;
   const el = document.getElementById('money');
-  el.textContent = money;
+  el.textContent = `${money}€`;
   el.classList.remove('bump');
   void el.offsetWidth; // restart the bump animation
   el.classList.add('bump');
@@ -360,11 +378,10 @@ function winEffect() {
 }
 
 function loseEffect() {
-  const centerDisplay = document.getElementById('center-display');
-
-  setTimeout(() => {
-    centerDisplay.classList.add('animation');
-  }, 650);
+  const flash = document.createElement('div');
+  flash.classList.add('lose-flash');
+  document.body.appendChild(flash);
+  setTimeout(() => flash.remove(), 900);
 }
 
 // Animates the 3 revealed cards back onto the stack, then deals the whole
@@ -415,16 +432,8 @@ function startNewRound() {
     return;
   }
 
-  let pending = centerCards.length;
-  centerCards.forEach((card, i) => {
-    setTimeout(() => {
-      card.classList.remove('flipped');
-      flipMove(card, stack, () => {
-        pending -= 1;
-        if (pending === 0) dealOut();
-      });
-    }, i * 100);
-  });
+  centerCards.forEach((card) => card.classList.remove('flipped'));
+  flipMoveBatch(centerCards, stack, dealOut);
 }
 
 function newRound() {
