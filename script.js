@@ -12,7 +12,7 @@ const DEAL_STAGGER = 40;
 const STAKE = 2;
 const START_MONEY = 20;
 // Only for development. Set this to false before publishing the game.
-const DEBUG = true;
+const DEBUG = false;
 
 const DECK = createDeck();
 
@@ -77,6 +77,12 @@ let flippedCards = []; // DOM elements currently selected (in slots / center)
 let money = null;
 let round = 1;
 let state = STATE.PLAYING;
+let effectCanvas;
+let effectContext;
+let particleFrame = null;
+let particlePool = [];
+
+const PARTICLE_POOL_SIZE = 760;
 
 // functions
 function createDeck() {
@@ -364,7 +370,7 @@ function applyResultEffects(payout, tag) {
   centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
 
   if (isWin) {
-    winEffect(tag);
+    winEffect(tag, payout);
   } else {
     loseEffect(tag === 'nearMiss');
   }
@@ -405,99 +411,172 @@ function setMoney(value) {
   el.classList.add('bump');
 }
 
-function winEffect(tag) {
+function setupEffects() {
+  effectCanvas = document.getElementById('effects-canvas');
+  effectContext = effectCanvas.getContext('2d');
+  particlePool = Array.from({ length: PARTICLE_POOL_SIZE }, () => ({ active: false }));
+  resizeEffectsCanvas();
+  window.addEventListener('resize', resizeEffectsCanvas);
+}
+
+function resizeEffectsCanvas() {
+  if (!effectCanvas) return;
+  const scale = window.devicePixelRatio || 1;
+  effectCanvas.width = Math.round(window.innerWidth * scale);
+  effectCanvas.height = Math.round(window.innerHeight * scale);
+  effectContext.setTransform(scale, 0, 0, scale, 0, 0);
+}
+
+function restartEffectLayer(id, ...classes) {
+  const layer = document.getElementById(id);
+  layer.className = layer.className.split(' ')[0];
+  void layer.offsetWidth;
+  layer.classList.add('active', ...classes);
+  return layer;
+}
+
+function launchConfetti(count, tag) {
+  const isJackpot = tag === 'jackpot';
+  const isTriple = tag === 'triple';
+  const now = performance.now();
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const shapes = ['circle', 'star', 'ribbon', 'square'];
+
+  particlePool.forEach((particle, index) => {
+    if (index >= count) {
+      particle.active = false;
+      return;
+    }
+    particle.active = true;
+    particle.startsAt = now + Math.random() * (isJackpot ? 1350 : isTriple ? 650 : 300);
+    particle.duration = (isJackpot ? 3800 : isTriple ? 3000 : 2400) + Math.random() * 1300;
+    particle.x = width * (0.2 + Math.random() * 0.6);
+    particle.y = height + 28;
+    particle.vx = (Math.random() - 0.5) * (isJackpot ? 1250 : isTriple ? 900 : 680);
+    particle.vy = -(isJackpot ? 1200 : isTriple ? 1000 : 760) - Math.random() * 520;
+    particle.gravity = isJackpot ? 760 : 680;
+    particle.rotation = Math.random() * Math.PI * 2;
+    particle.spin = (Math.random() - 0.5) * 15;
+    particle.size = (isJackpot ? 10 : 8) + Math.random() * 10;
+    particle.color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+    particle.shape = shapes[Math.floor(Math.random() * shapes.length)];
+  });
+
+  if (!particleFrame) particleFrame = requestAnimationFrame(renderParticles);
+}
+
+function renderParticles(now) {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  effectContext.clearRect(0, 0, width, height);
+  let needsNextFrame = false;
+
+  particlePool.forEach((particle) => {
+    if (!particle.active) return;
+    if (now < particle.startsAt) {
+      needsNextFrame = true;
+      return;
+    }
+    const elapsed = now - particle.startsAt;
+    if (elapsed > particle.duration) {
+      particle.active = false;
+      return;
+    }
+    const seconds = elapsed / 1000;
+    const opacity = Math.min(1, elapsed / 110) * Math.min(1, (particle.duration - elapsed) / 500);
+    const x = particle.x + particle.vx * seconds;
+    const y = particle.y + particle.vy * seconds + 0.5 * particle.gravity * seconds * seconds;
+    effectContext.save();
+    effectContext.globalAlpha = opacity;
+    effectContext.fillStyle = particle.color;
+    effectContext.translate(x, y);
+    effectContext.rotate(particle.rotation + particle.spin * seconds);
+    drawParticle(particle);
+    effectContext.restore();
+    needsNextFrame = true;
+  });
+
+  particleFrame = needsNextFrame ? requestAnimationFrame(renderParticles) : null;
+}
+
+function drawParticle(particle) {
+  const size = particle.size;
+  if (particle.shape === 'circle') {
+    effectContext.beginPath();
+    effectContext.ellipse(0, 0, size * 0.55, size * 0.32, 0, 0, Math.PI * 2);
+    effectContext.fill();
+  } else if (particle.shape === 'star') {
+    effectContext.beginPath();
+    for (let point = 0; point < 10; point += 1) {
+      const radius = point % 2 === 0 ? size * 0.7 : size * 0.28;
+      const angle = -Math.PI / 2 + (point * Math.PI) / 5;
+      effectContext.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    }
+    effectContext.fill();
+  } else {
+    effectContext.fillRect(
+      -size / (particle.shape === 'ribbon' ? 4 : 2),
+      -size,
+      particle.shape === 'ribbon' ? size / 2 : size,
+      size * (particle.shape === 'ribbon' ? 2 : 1)
+    );
+  }
+}
+
+function winEffect(tag, payout) {
   const isJackpot = tag === 'jackpot';
   const isTriple = tag === 'triple';
   const isMajorWin = isJackpot || isTriple;
 
-  let flash = null;
-  // Smaller wins keep the casino-style confetti, but no longer cover the
-  // screen. Only the Dreier and jackpot earn a full-screen light show.
+  // Only the Dreier and jackpot earn the full-screen flash + banner; smaller
+  // wins just get confetti so they don't feel as heavy-handed.
   if (isMajorWin) {
-    flash = document.createElement('div');
-    flash.classList.add('win-flash', 'major');
-    if (isJackpot) flash.classList.add('jackpot');
-    document.body.appendChild(flash);
-  }
+    restartEffectLayer('win-flash-layer', 'major', ...(isJackpot ? ['jackpot'] : []));
 
-  if (isMajorWin) {
-    const banner = document.createElement('div');
-    banner.classList.add('win-banner', isJackpot ? 'jackpot' : 'triple');
+    const banner = document.getElementById('win-banner');
     banner.textContent = isJackpot ? 'JACKPOT!' : 'DREIER!';
-    document.body.appendChild(banner);
-    setTimeout(() => banner.remove(), isJackpot ? 4600 : 1900);
+    restartEffectLayer('win-banner', isJackpot ? 'jackpot' : 'triple');
   }
 
-  if (isJackpot) createJackpotOverload();
+  if (isJackpot) createJackpotOverload(payout);
 
-  const layer = document.createElement('div');
-  layer.classList.add('confetti-layer');
-  document.body.appendChild(layer);
-
-  const pieceCount = isJackpot ? 720 : isTriple ? 440 : 320;
-  const confettiShapes = ['circle', 'star', 'ribbon', 'square'];
-  for (let i = 0; i < pieceCount; i++) {
-    const piece = document.createElement('div');
-    piece.classList.add('confetti-piece');
-    piece.classList.add(`confetti-${confettiShapes[Math.floor(Math.random() * confettiShapes.length)]}`);
-    piece.style.left = `${20 + Math.random() * 60}vw`;
-    piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
-    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * (isJackpot ? 110 : isTriple ? 82 : 48)}vw`);
-    piece.style.setProperty('--rise', `${48 + Math.random() * (isJackpot ? 62 : isTriple ? 48 : 28)}vh`);
-    piece.style.setProperty('--spin', `${(Math.random() - 0.5) * (isJackpot ? 2160 : 1080)}deg`);
-    piece.style.animationDuration = `${isJackpot ? 3.8 + Math.random() * 1.8 : 2.4 + Math.random() * 1.4}s`;
-    // The long delay range makes a second confetti wave arrive after the
-    // first explosion, so the jackpot celebration does not end at once.
-    piece.style.animationDelay = `${Math.random() * (isJackpot ? 1.35 : isMajorWin ? 0.65 : 0.22)}s`;
-    if (isMajorWin) {
-      piece.style.width = '14px';
-      piece.style.height = '22px';
-    }
-    layer.appendChild(piece);
-  }
-
-  if (flash) setTimeout(() => flash.remove(), isJackpot ? 3600 : 1600);
-  setTimeout(() => layer.remove(), isJackpot ? 7000 : isTriple ? 4400 : 3500);
+  const pieceCount = isJackpot ? 260 : isTriple ? 160 : 90;
+  launchConfetti(pieceCount, tag);
 }
 
-function createJackpotOverload() {
-  const spectacle = document.createElement('div');
-  spectacle.classList.add('jackpot-spectacle');
-  document.body.appendChild(spectacle);
+function createJackpotOverload(payout) {
+  const spectacle = document.getElementById('jackpot-spectacle');
 
-  // Bright bursts behind the banner make the whole screen feel like a
-  // jackpot machine has gone completely off the rails.
-  for (let i = 0; i < 8; i++) {
-    const burst = document.createElement('div');
-    burst.classList.add('jackpot-burst');
+  spectacle.querySelectorAll('.jackpot-burst').forEach((burst) => {
     burst.style.left = `${8 + Math.random() * 84}%`;
     burst.style.top = `${12 + Math.random() * 66}%`;
     burst.style.setProperty('--burst-delay', `${Math.random() * 1.4}s`);
     burst.style.setProperty('--burst-size', `${180 + Math.random() * 260}px`);
-    spectacle.appendChild(burst);
-  }
-
-  ['JACKPOT!', '40€', 'JACKPOT!'].forEach((text, index) => {
-    const echo = document.createElement('div');
-    echo.classList.add('jackpot-echo');
-    echo.textContent = text;
-    echo.style.setProperty('--echo-delay', `${0.25 + index * 0.42}s`);
-    echo.style.setProperty('--echo-turn', `${index % 2 === 0 ? -1 : 1}deg`);
-    spectacle.appendChild(echo);
   });
 
+  const echoes = spectacle.querySelectorAll('.jackpot-echo');
+  const echoTexts = ['JACKPOT!', `${payout}€`, 'JACKPOT!'];
+  echoes.forEach((echo, index) => {
+    echo.textContent = echoTexts[index] ?? 'JACKPOT!';
+    echo.style.setProperty('--echo-delay', `${0.25 + index * 0.42}s`);
+    echo.style.setProperty('--echo-turn', `${index % 2 === 0 ? -1 : 1}deg`);
+  });
+
+  restartEffectLayer('jackpot-spectacle');
+  setTimeout(() => restartEffectLayer('jackpot-spectacle'), 1000);
+  setTimeout(() => restartEffectLayer('jackpot-spectacle'), 1000);
+  setTimeout(() => spectacle.classList.remove('active'), 4800);
+
   const game = document.querySelector('.container');
+  game.classList.remove('jackpot-shake');
+  void game.offsetWidth;
   game.classList.add('jackpot-shake');
   setTimeout(() => game.classList.remove('jackpot-shake'), 1800);
-  setTimeout(() => spectacle.remove(), 4800);
 }
 
 function loseEffect(hard) {
-  const flash = document.createElement('div');
-  flash.classList.add('lose-flash');
-  if (hard) flash.classList.add('hard');
-  document.body.appendChild(flash);
-  setTimeout(() => flash.remove(), hard ? 1200 : 900);
+  restartEffectLayer('lose-flash-layer', ...(hard ? ['hard'] : []));
 }
 
 // Animates the 3 revealed cards back onto the stack, then deals the whole
@@ -599,7 +678,7 @@ function previewResult({ payout, tag, label }) {
   centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
 
   if (isWin) {
-    winEffect(tag);
+    winEffect(tag, payout);
   } else {
     loseEffect(tag === 'nearMiss');
   }
@@ -608,7 +687,7 @@ function previewResult({ payout, tag, label }) {
 }
 
 function setupDebugControls() {
-  if (!DEBUG) return;
+  if (!DEBUG) return document.querySelector('#debug-controls').classList.add('hidden');
 
   const controls = document.getElementById('debug-controls');
   const events = [
@@ -656,6 +735,7 @@ document.querySelector('#new-round-btn').addEventListener('click', () => {
 });
 
 fitCardSize();
+setupEffects();
 buildCardElements();
 setupDebugControls();
 newGame();
