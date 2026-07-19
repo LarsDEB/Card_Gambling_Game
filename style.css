@@ -327,7 +327,7 @@ button:disabled {
   animation: slotDealIn 0.46s cubic-bezier(0.2, 0.85, 0.3, 1.15) var(--slot-delay, 0ms) both;
 }
 
-.slot.hidden {
+.slot.invisible {
   border-color: transparent;
 }
 

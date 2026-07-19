@@ -245,7 +245,7 @@ function buildCardElements() {
         placeholder.classList.add('card', 'placeholder');
         grid.insertBefore(placeholder, grid.children[index] ?? null);
 
-        setTimeout(() => slot.classList.add('hidden'), 650);
+        setTimeout(() => slot.classList.add('invisible'), 650);
 
         if (isThird) {
           setTimeout(collectAndReveal, 650);
@@ -610,7 +610,7 @@ function startNewRound() {
     document.querySelectorAll('.slot').forEach((s, index) => {
       s.innerHTML = '';
       s.style.setProperty('--slot-delay', `${index * 110}ms`);
-      s.classList.remove('hidden', 'dealing');
+      s.classList.remove('invisible', 'dealing');
       // Force the reset to be painted first; otherwise the browser would
       // merge both class changes and skip the entrance animation.
       void s.offsetWidth;
