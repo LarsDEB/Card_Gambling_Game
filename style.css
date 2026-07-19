@@ -176,6 +176,15 @@ button:disabled {
   height: var(--card-height);
   perspective: 1000px;
   cursor: pointer;
+  transition: transform 0.3s ease-in-out;
+}
+
+/* Scale the whole card, not only its back. The flip already uses transform
+   on .card-inner, so this keeps both animations independent. */
+.card:not(.flipped):not(.placeholder):hover {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.05);
 }
 
 .card-inner {
@@ -268,8 +277,28 @@ button:disabled {
   transition: opacity 0.2s ease;
 }
 
+.slot.dealing {
+  animation: slotDealIn 0.46s cubic-bezier(0.2, 0.85, 0.3, 1.15) var(--slot-delay, 0ms) both;
+}
+
 .slot.hidden {
   border-color: transparent;
+}
+
+@keyframes slotDealIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.82);
+    border-color: transparent;
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .stack {

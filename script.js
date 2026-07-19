@@ -442,6 +442,10 @@ function startNewRound() {
   state = STATE.DEALING;
   updateNewRoundButton();
 
+  // pop the message away right as the cards start leaving, instead of
+  // letting it linger until the whole round-reset is done
+  document.getElementById('message').classList.remove('visible');
+
   const stack = document.getElementById('stack');
   const grid = document.getElementById('grid');
   const centerCards = flippedCards.slice();
@@ -458,9 +462,14 @@ function startNewRound() {
     document.getElementById('center-display').classList.remove('result-win', 'result-lose');
     document.getElementById('center-display').style.top = '';
     document.getElementById('center-display').style.transform = '';
-    document.querySelectorAll('.slot').forEach((s) => {
+    document.querySelectorAll('.slot').forEach((s, index) => {
       s.innerHTML = '';
-      s.classList.remove('hidden');
+      s.style.setProperty('--slot-delay', `${index * 110}ms`);
+      s.classList.remove('hidden', 'dealing');
+      // Force the reset to be painted first; otherwise the browser would
+      // merge both class changes and skip the entrance animation.
+      void s.offsetWidth;
+      s.classList.add('dealing');
     });
 
     setMoney(money - STAKE);
@@ -500,7 +509,7 @@ function triggerGameOver() {
   updateNewRoundButton();
 
   const message = document.getElementById('message');
-  message.textContent = 'GAME OVER – kein Guthaben mehr!';
+  message.textContent = 'GAME OVER - kein Guthaben mehr!';
   message.classList.remove('win', 'lose', 'pop');
   message.classList.add('game-over', 'visible');
   void message.offsetWidth;
