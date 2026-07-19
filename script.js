@@ -11,6 +11,8 @@ const CONFETTI_COLORS = ['#f0c419', '#963126', '#007e34', '#0070bb', '#fae900', 
 const DEAL_STAGGER = 40;
 const STAKE = 2;
 const START_MONEY = 20;
+// Only for development. Set this to false before publishing the game.
+const DEBUG = true;
 
 const DECK = createDeck();
 
@@ -362,7 +364,7 @@ function applyResultEffects(payout, tag) {
   centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
 
   if (isWin) {
-    winEffect(tag === 'jackpot');
+    winEffect(tag);
   } else {
     loseEffect(tag === 'nearMiss');
   }
@@ -403,18 +405,36 @@ function setMoney(value) {
   el.classList.add('bump');
 }
 
-function winEffect(big) {
-  playWinSound(big);
+function winEffect(tag) {
+  const isJackpot = tag === 'jackpot';
+  const isTriple = tag === 'triple';
+  const isMajorWin = isJackpot || isTriple;
 
-  const flash = document.createElement('div');
-  flash.classList.add('win-flash');
-  document.body.appendChild(flash);
+  let flash = null;
+  // Smaller wins keep the casino-style confetti, but no longer cover the
+  // screen. Only the Dreier and jackpot earn a full-screen light show.
+  if (isMajorWin) {
+    flash = document.createElement('div');
+    flash.classList.add('win-flash', 'major');
+    if (isJackpot) flash.classList.add('jackpot');
+    document.body.appendChild(flash);
+  }
+
+  if (isMajorWin) {
+    const banner = document.createElement('div');
+    banner.classList.add('win-banner', isJackpot ? 'jackpot' : 'triple');
+    banner.textContent = isJackpot ? 'JACKPOT!' : 'DREIER!';
+    document.body.appendChild(banner);
+    setTimeout(() => banner.remove(), isJackpot ? 4600 : 1900);
+  }
+
+  if (isJackpot) createJackpotOverload();
 
   const layer = document.createElement('div');
   layer.classList.add('confetti-layer');
   document.body.appendChild(layer);
 
-  const pieceCount = big ? 160 : Math.floor(Math.random() * 50) + 30;
+  const pieceCount = isJackpot ? 720 : isTriple ? 440 : 320;
   const confettiShapes = ['circle', 'star', 'ribbon', 'square'];
   for (let i = 0; i < pieceCount; i++) {
     const piece = document.createElement('div');
@@ -422,56 +442,54 @@ function winEffect(big) {
     piece.classList.add(`confetti-${confettiShapes[Math.floor(Math.random() * confettiShapes.length)]}`);
     piece.style.left = `${20 + Math.random() * 60}vw`;
     piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
-    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * (big ? 72 : 48)}vw`);
-    piece.style.setProperty('--rise', `${48 + Math.random() * (big ? 42 : 28)}vh`);
-    piece.style.setProperty('--spin', `${(Math.random() - 0.5) * 1080}deg`);
-    piece.style.animationDuration = `${2.4 + Math.random() * 1.4}s`;
-    piece.style.animationDelay = `${Math.random() * (big ? 0.45 : 0.22)}s`;
-    if (big) {
+    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * (isJackpot ? 110 : isTriple ? 82 : 48)}vw`);
+    piece.style.setProperty('--rise', `${48 + Math.random() * (isJackpot ? 62 : isTriple ? 48 : 28)}vh`);
+    piece.style.setProperty('--spin', `${(Math.random() - 0.5) * (isJackpot ? 2160 : 1080)}deg`);
+    piece.style.animationDuration = `${isJackpot ? 3.8 + Math.random() * 1.8 : 2.4 + Math.random() * 1.4}s`;
+    // The long delay range makes a second confetti wave arrive after the
+    // first explosion, so the jackpot celebration does not end at once.
+    piece.style.animationDelay = `${Math.random() * (isJackpot ? 1.35 : isMajorWin ? 0.65 : 0.22)}s`;
+    if (isMajorWin) {
       piece.style.width = '14px';
       piece.style.height = '22px';
     }
     layer.appendChild(piece);
   }
 
-  setTimeout(() => flash.remove(), big ? 1400 : 1000);
-  setTimeout(() => layer.remove(), big ? 4500 : 3500);
+  if (flash) setTimeout(() => flash.remove(), isJackpot ? 3600 : 1600);
+  setTimeout(() => layer.remove(), isJackpot ? 7000 : isTriple ? 4400 : 3500);
 }
 
-// A small original brass fanfare. Web Audio needs no external sound file.
-function playWinSound(big) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
+function createJackpotOverload() {
+  const spectacle = document.createElement('div');
+  spectacle.classList.add('jackpot-spectacle');
+  document.body.appendChild(spectacle);
 
-  try {
-    const context = new AudioContextClass();
-    const notes = [523.25, 659.25, 783.99, 1046.5];
-    const start = context.currentTime;
-
-    notes.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const noteStart = start + index * 0.09;
-      const noteEnd = noteStart + (big ? 0.3 : 0.22);
-
-      oscillator.type = 'sawtooth';
-      oscillator.frequency.setValueAtTime(frequency, noteStart);
-      gain.gain.setValueAtTime(0.0001, noteStart);
-      gain.gain.exponentialRampToValueAtTime(big ? 0.045 : 0.028, noteStart + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
-      const filter = context.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(1900, noteStart);
-      filter.Q.setValueAtTime(1.4, noteStart);
-      oscillator.connect(filter).connect(gain).connect(context.destination);
-      oscillator.start(noteStart);
-      oscillator.stop(noteEnd);
-    });
-
-    setTimeout(() => context.close(), 1200);
-  } catch {
-    // Sound is an enhancement only; a browser may still deny audio playback.
+  // Bright bursts behind the banner make the whole screen feel like a
+  // jackpot machine has gone completely off the rails.
+  for (let i = 0; i < 8; i++) {
+    const burst = document.createElement('div');
+    burst.classList.add('jackpot-burst');
+    burst.style.left = `${8 + Math.random() * 84}%`;
+    burst.style.top = `${12 + Math.random() * 66}%`;
+    burst.style.setProperty('--burst-delay', `${Math.random() * 1.4}s`);
+    burst.style.setProperty('--burst-size', `${180 + Math.random() * 260}px`);
+    spectacle.appendChild(burst);
   }
+
+  ['JACKPOT!', '40€', 'JACKPOT!'].forEach((text, index) => {
+    const echo = document.createElement('div');
+    echo.classList.add('jackpot-echo');
+    echo.textContent = text;
+    echo.style.setProperty('--echo-delay', `${0.25 + index * 0.42}s`);
+    echo.style.setProperty('--echo-turn', `${index % 2 === 0 ? -1 : 1}deg`);
+    spectacle.appendChild(echo);
+  });
+
+  const game = document.querySelector('.container');
+  game.classList.add('jackpot-shake');
+  setTimeout(() => game.classList.remove('jackpot-shake'), 1800);
+  setTimeout(() => spectacle.remove(), 4800);
 }
 
 function loseEffect(hard) {
@@ -564,6 +582,55 @@ function triggerGameOver() {
   message.classList.add('pop');
 }
 
+// Lets us inspect every result effect without playing through rounds or
+// changing the actual balance/round state.
+function previewResult({ payout, tag, label }) {
+  const message = document.getElementById('message');
+  const centerDisplay = document.getElementById('center-display');
+  const isWin = payout > 0;
+
+  message.textContent = label;
+  message.classList.remove('win', 'lose', 'pop', 'visible');
+  message.classList.add(isWin ? 'win' : 'lose', 'visible');
+  void message.offsetWidth;
+  message.classList.add('pop');
+
+  centerDisplay.classList.remove('result-win', 'result-lose');
+  centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
+
+  if (isWin) {
+    winEffect(tag);
+  } else {
+    loseEffect(tag === 'nearMiss');
+  }
+
+  setTimeout(() => centerDisplay.classList.remove('result-win', 'result-lose'), 3000);
+}
+
+function setupDebugControls() {
+  if (!DEBUG) return;
+
+  const controls = document.getElementById('debug-controls');
+  const events = [
+    { payout: 40, tag: 'jackpot', label: 'Test: JACKPOT!' },
+    { payout: 10, tag: 'triple', label: 'Test: Dreier' },
+    { payout: 4, tag: 'nearMissPair', label: 'Test: Beinahe-Jackpot mit Paar' },
+    { payout: 1, tag: 'pair', label: 'Test: Paar' },
+    { payout: 0, tag: 'nearMiss', label: 'Test: So knapp am Jackpot vorbei!' },
+    { payout: 0, tag: 'none', label: 'Test: Nichts gewonnen.' },
+  ];
+
+  events.forEach((event) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = event.label.replace('Test: ', '');
+    button.addEventListener('click', () => previewResult(event));
+    controls.appendChild(button);
+  });
+
+  controls.hidden = false;
+}
+
 function newRound() {
   if (state !== STATE.REVIEW) return;
   round += 1;
@@ -590,4 +657,5 @@ document.querySelector('#new-round-btn').addEventListener('click', () => {
 
 fitCardSize();
 buildCardElements();
+setupDebugControls();
 newGame();
