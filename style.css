@@ -97,18 +97,66 @@ button:disabled {
 }
 
 #message {
-  min-height: 32px;
-  font-weight: bold;
-  font-size: clamp(1.1rem, 3vw, 1.6rem);
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  min-height: 40px;
+  font-weight: 800;
+  font-size: clamp(1.5rem, 5vw, 2.6rem);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  padding: 4px 20px;
+  border-radius: 14px;
+  transform-origin: center;
 }
 
 #message.win {
   color: #7cfc7c;
+  background: rgba(60, 200, 60, 0.16);
+  box-shadow: 0 0 30px rgba(124, 252, 124, 0.5);
 }
 
 #message.lose {
   color: #ff8a8a;
+  background: rgba(200, 50, 50, 0.16);
+  box-shadow: 0 0 30px rgba(255, 90, 90, 0.5);
+}
+
+#message.game-over {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 40px rgba(255, 0, 0, 0.7);
+  animation: gameOverPulse 1.4s ease-in-out infinite;
+}
+
+#message.pop {
+  animation: messagePop 0.45s ease;
+}
+
+#message.game-over.pop {
+  animation:
+    messagePop 0.45s ease,
+    gameOverPulse 1.4s ease-in-out 0.45s infinite;
+}
+
+@keyframes messagePop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes gameOverPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 50px rgba(255, 0, 0, 0.9);
+  }
 }
 
 #grid {
@@ -308,6 +356,38 @@ button:disabled {
   animation: loseShake 0.5s ease;
 }
 
+/* the near-miss (1 schwarze Karte, kein Paar) gets an extra hard shake */
+.center-cards.shake-hard {
+  animation: loseShakeHard 0.6s ease;
+}
+
+@keyframes loseShakeHard {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  10% {
+    transform: translateX(-18px) scale(0.95) rotate(-2deg);
+  }
+  25% {
+    transform: translateX(16px) scale(0.95) rotate(2deg);
+  }
+  40% {
+    transform: translateX(-14px) scale(0.95) rotate(-2deg);
+  }
+  55% {
+    transform: translateX(12px) scale(0.96) rotate(1deg);
+  }
+  70% {
+    transform: translateX(-8px) scale(0.98);
+  }
+  85% {
+    transform: translateX(4px) scale(0.99);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
 @keyframes loseShake {
   0% {
     transform: translateX(0) scale(1);
@@ -340,6 +420,10 @@ button:disabled {
   animation: loseFlash 0.9s ease forwards;
 }
 
+.lose-flash.hard {
+  animation: loseFlashHard 1.2s ease forwards;
+}
+
 @keyframes loseFlash {
   0% {
     background: rgba(255, 40, 40, 0);
@@ -349,5 +433,23 @@ button:disabled {
   }
   100% {
     background: rgba(255, 40, 40, 0);
+  }
+}
+
+@keyframes loseFlashHard {
+  0% {
+    background: rgba(255, 20, 20, 0);
+  }
+  20% {
+    background: rgba(255, 20, 20, 0.55);
+  }
+  40% {
+    background: rgba(255, 20, 20, 0.15);
+  }
+  60% {
+    background: rgba(255, 20, 20, 0.45);
+  }
+  100% {
+    background: rgba(255, 20, 20, 0);
   }
 }

@@ -4,10 +4,13 @@ const STATE = {
   REVIEW: 'review',
   DEALING: 'dealing',
   COLLECTING: 'collecting',
+  GAME_OVER: 'game_over',
 };
 const COLORS = ['red', 'green', 'blue', 'yellow', 'black'];
 const CONFETTI_COLORS = ['#f0c419', '#963126', '#007e34', '#0070bb', '#fae900', '#ffffff'];
 const DEAL_STAGGER = 40;
+const STAKE = 2;
+const START_MONEY = 20;
 
 const DECK = createDeck();
 
@@ -293,60 +296,82 @@ function collectAndReveal() {
 // while the win/lose effects fade in over the same duration.
 function revealCenter() {
   const centerCards = document.getElementById('center-cards');
-  const result = evaluate(flippedCards);
+  const { payout, tag } = evaluate(flippedCards);
 
-  applyResultEffects(result);
+  applyResultEffects(payout, tag);
 
   flipMoveBatch(flippedCards, centerCards, () => {
     state = STATE.REVIEW;
     updateNewRoundButton();
 
-    if (result < 0) {
+    if (payout === 0) {
       // trigger the shake only now: while the cards are still flying, the
       // inline FLIP transform would just override/hide a CSS animation
-      centerCards.classList.add('shake');
-      setTimeout(() => centerCards.classList.remove('shake'), 500);
+      centerCards.classList.add(tag === 'nearMiss' ? 'shake-hard' : 'shake');
+      setTimeout(() => centerCards.classList.remove('shake', 'shake-hard'), 600);
     }
   });
 }
 
-function applyResultEffects(result) {
+function applyResultEffects(payout, tag) {
   const message = document.getElementById('message');
   const centerDisplay = document.getElementById('center-display');
 
-  setMoney(money + result);
+  // the raw payout is what gets shown/celebrated - deliberately not the net
+  // (payout minus the stake already paid in dealOut). A "pair" pays out
+  // less than the stake but still gets the full win treatment.
+  setMoney(money + payout);
 
-  message.textContent = result >= 0 ? `Gewinn: +${result}€` : `Verlust: ${result}€`;
-  message.classList.remove('win', 'lose');
-  message.classList.add(result >= 0 ? 'win' : 'lose');
+  const isWin = payout > 0;
+
+  if (tag === 'nearMiss') {
+    message.textContent = 'So knapp am Jackpot vorbei!';
+  } else if (isWin) {
+    message.textContent = `Gewinn: +${payout}€`;
+  } else {
+    message.textContent = `Verlust: -${STAKE}€`;
+  }
+
+  message.classList.remove('win', 'lose', 'pop');
+  message.classList.add(isWin ? 'win' : 'lose');
+  void message.offsetWidth; // restart the pop-in animation
+  message.classList.add('pop');
 
   // triggers the box-shadow / shake CSS transitions, which fade in over the
   // same 0.6s as the flight to the center
-  centerDisplay.classList.add(result >= 0 ? 'result-win' : 'result-lose');
+  centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
 
-  if (result >= 0) {
-    winEffect();
+  if (isWin) {
+    winEffect(tag === 'jackpot');
   } else {
-    loseEffect();
+    loseEffect(tag === 'nearMiss');
   }
 }
 
+// Suchfaktor-Design: 2 schwarze Karten sind der seltene Jackpot, 1 schwarze
+// Karte ohne Paar ist der "Beinahe-Jackpot"-Beinahe-Verlust. Der Einsatz
+// wird separat beim Austeilen abgezogen (siehe dealOut) - hier wird nur der
+// rohe Gewinn zurückgegeben, der in der Nachricht auch so angezeigt wird.
+// Das "Paar" zahlt absichtlich weniger als den Einsatz zurueck: es wird als
+// Gewinn gefeiert (Konfetti, gruen), obwohl es netto ein Verlust ist - der
+// klassische Slot-Machine-Trick "Loss Disguised as Win".
 function evaluate(flippedCards) {
-  const STAKE = 2;
-  const PAYOUT = { triple: 10, pair: 4, none: 1 };
-
   const counts = {};
-
   for (const card of flippedCards) {
     const color = card.querySelector('.card-front').textContent;
     counts[color] = (counts[color] || 0) + 1;
   }
 
-  let payout = PAYOUT.none;
-  if (Object.values(counts).includes(3)) payout = PAYOUT.triple;
-  else if (Object.values(counts).includes(2)) payout = PAYOUT.pair;
+  const blackCount = counts.black || 0;
+  const hasTriple = Object.values(counts).includes(3);
+  const hasPair = Object.values(counts).includes(2);
 
-  return payout - STAKE;
+  if (blackCount === 2) return { payout: 40, tag: 'jackpot' };
+  if (hasTriple) return { payout: 10, tag: 'triple' };
+  if (blackCount === 1 && hasPair) return { payout: 4, tag: 'nearMissPair' };
+  if (hasPair) return { payout: 1, tag: 'pair' };
+  if (blackCount === 1) return { payout: 0, tag: 'nearMiss' };
+  return { payout: 0, tag: 'none' };
 }
 
 function setMoney(value) {
@@ -358,30 +383,35 @@ function setMoney(value) {
   el.classList.add('bump');
 }
 
-function winEffect() {
+function winEffect(big) {
   const layer = document.createElement('div');
   layer.classList.add('confetti-layer');
   document.body.appendChild(layer);
 
-  const pieceCount = Math.floor(Math.random() * 50) + 30;
+  const pieceCount = big ? 160 : Math.floor(Math.random() * 50) + 30;
   for (let i = 0; i < pieceCount; i++) {
     const piece = document.createElement('div');
     piece.classList.add('confetti-piece');
     piece.style.left = `${Math.random() * 100}vw`;
     piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
     piece.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
-    piece.style.animationDelay = `${Math.random() * 0.4}s`;
+    piece.style.animationDelay = `${Math.random() * (big ? 0.8 : 0.4)}s`;
+    if (big) {
+      piece.style.width = '14px';
+      piece.style.height = '22px';
+    }
     layer.appendChild(piece);
   }
 
-  setTimeout(() => layer.remove(), 3500);
+  setTimeout(() => layer.remove(), big ? 4500 : 3500);
 }
 
-function loseEffect() {
+function loseEffect(hard) {
   const flash = document.createElement('div');
   flash.classList.add('lose-flash');
+  if (hard) flash.classList.add('hard');
   document.body.appendChild(flash);
-  setTimeout(() => flash.remove(), 900);
+  setTimeout(() => flash.remove(), hard ? 1200 : 900);
 }
 
 // Animates the 3 revealed cards back onto the stack, then deals the whole
@@ -397,14 +427,21 @@ function startNewRound() {
   const centerCards = flippedCards.slice();
 
   const dealOut = () => {
+    if (money < STAKE) {
+      triggerGameOver();
+      return;
+    }
+
     grid.innerHTML = '';
     document.getElementById('message').textContent = '';
-    document.getElementById('message').classList.remove('win', 'lose');
+    document.getElementById('message').classList.remove('win', 'lose', 'pop');
     document.getElementById('center-display').classList.remove('result-win', 'result-lose');
     document.querySelectorAll('.slot').forEach((s) => {
       s.innerHTML = '';
       s.classList.remove('hidden');
     });
+
+    setMoney(money - STAKE);
 
     shuffle(DECK);
     assignColors(DECK);
@@ -436,8 +473,20 @@ function startNewRound() {
   flipMoveBatch(centerCards, stack, dealOut);
 }
 
+function triggerGameOver() {
+  state = STATE.GAME_OVER;
+  updateNewRoundButton();
+
+  const message = document.getElementById('message');
+  message.textContent = 'GAME OVER – kein Guthaben mehr!';
+  message.classList.remove('win', 'lose', 'pop');
+  message.classList.add('game-over');
+  void message.offsetWidth;
+  message.classList.add('pop');
+}
+
 function newRound() {
-  if (state === STATE.DEALING) return;
+  if (state !== STATE.REVIEW) return;
   round += 1;
   document.getElementById('round').textContent = round;
   startNewRound();
@@ -445,7 +494,8 @@ function newRound() {
 
 function newGame() {
   if (state === STATE.DEALING) return;
-  setMoney(100);
+  document.getElementById('message').classList.remove('game-over');
+  setMoney(START_MONEY);
   round = 1;
   document.getElementById('round').textContent = round;
   startNewRound();
