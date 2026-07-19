@@ -404,18 +404,29 @@ function setMoney(value) {
 }
 
 function winEffect(big) {
+  playWinSound(big);
+
+  const flash = document.createElement('div');
+  flash.classList.add('win-flash');
+  document.body.appendChild(flash);
+
   const layer = document.createElement('div');
   layer.classList.add('confetti-layer');
   document.body.appendChild(layer);
 
   const pieceCount = big ? 160 : Math.floor(Math.random() * 50) + 30;
+  const confettiShapes = ['circle', 'star', 'ribbon', 'square'];
   for (let i = 0; i < pieceCount; i++) {
     const piece = document.createElement('div');
     piece.classList.add('confetti-piece');
-    piece.style.left = `${Math.random() * 100}vw`;
+    piece.classList.add(`confetti-${confettiShapes[Math.floor(Math.random() * confettiShapes.length)]}`);
+    piece.style.left = `${20 + Math.random() * 60}vw`;
     piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
-    piece.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
-    piece.style.animationDelay = `${Math.random() * (big ? 0.8 : 0.4)}s`;
+    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * (big ? 72 : 48)}vw`);
+    piece.style.setProperty('--rise', `${48 + Math.random() * (big ? 42 : 28)}vh`);
+    piece.style.setProperty('--spin', `${(Math.random() - 0.5) * 1080}deg`);
+    piece.style.animationDuration = `${2.4 + Math.random() * 1.4}s`;
+    piece.style.animationDelay = `${Math.random() * (big ? 0.45 : 0.22)}s`;
     if (big) {
       piece.style.width = '14px';
       piece.style.height = '22px';
@@ -423,7 +434,44 @@ function winEffect(big) {
     layer.appendChild(piece);
   }
 
+  setTimeout(() => flash.remove(), big ? 1400 : 1000);
   setTimeout(() => layer.remove(), big ? 4500 : 3500);
+}
+
+// A small original brass fanfare. Web Audio needs no external sound file.
+function playWinSound(big) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    const context = new AudioContextClass();
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    const start = context.currentTime;
+
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = start + index * 0.09;
+      const noteEnd = noteStart + (big ? 0.3 : 0.22);
+
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.setValueAtTime(frequency, noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(big ? 0.045 : 0.028, noteStart + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+      const filter = context.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1900, noteStart);
+      filter.Q.setValueAtTime(1.4, noteStart);
+      oscillator.connect(filter).connect(gain).connect(context.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteEnd);
+    });
+
+    setTimeout(() => context.close(), 1200);
+  } catch {
+    // Sound is an enhancement only; a browser may still deny audio playback.
+  }
 }
 
 function loseEffect(hard) {

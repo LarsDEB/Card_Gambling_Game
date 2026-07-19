@@ -361,18 +361,63 @@ button:disabled {
 
 .confetti-piece {
   position: absolute;
-  top: -20px;
+  bottom: -24px;
   width: 10px;
   height: 16px;
   opacity: 0.9;
-  animation: confetti-fall linear forwards;
+  border-radius: 2px;
+  animation: confetti-burst cubic-bezier(0.12, 0.65, 0.25, 1) forwards;
 }
 
-@keyframes confetti-fall {
-  to {
-    transform: translateY(110vh) rotate(720deg);
-    opacity: 0.4;
+.confetti-circle {
+  border-radius: 50%;
+}
+
+.confetti-star {
+  width: 18px;
+  height: 18px;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 94%, 50% 72%, 21% 94%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+.confetti-ribbon {
+  width: 7px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+@keyframes confetti-burst {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0.7);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.12, 0.72, 0.28, 1);
   }
+  10% {
+    opacity: 1;
+  }
+  48% {
+    transform: translate(var(--drift), calc(-1 * var(--rise))) rotate(var(--spin)) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.32, 0, 0.72, 0.98);
+  }
+  100% {
+    transform: translate(var(--drift), 12vh) rotate(calc(var(--spin) * 1.35)) scale(0.85);
+    opacity: 0;
+  }
+}
+
+.win-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+  background: radial-gradient(circle at 50% 46%, rgba(255, 239, 132, 0.52), rgba(240, 196, 25, 0.18) 32%, transparent 68%);
+  animation: winFlash 1s ease-out forwards;
+}
+
+@keyframes winFlash {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* lose-effect */
