@@ -291,18 +291,40 @@ function collectAndReveal() {
   });
 }
 
+// Positions the center-display so its top aligns with the grid's top edge
+// - the grid is already sized/positioned to fit the viewport (fitCardSize),
+// so reusing that reference point is simpler and more robust than
+// recomputing available space here. Must run before the cards start flying.
+function positionCenterDisplay() {
+  const centerDisplay = document.getElementById('center-display');
+  const grid = document.getElementById('grid');
+
+  const gridTop = grid.getBoundingClientRect().top;
+
+  centerDisplay.style.top = `${gridTop}px`;
+  centerDisplay.style.transform = 'translate(-50%, 0)';
+}
+
 // Moves the 3 selected cards from their slots into the center display, all
-// together (so they land as a stable group with no mid-flight layout jump),
-// while the win/lose effects fade in over the same duration.
+// together (so they land as a stable group with no mid-flight layout jump).
+// The win/lose glow fades in during the flight, but the message text only
+// pops in once the cards have actually landed - otherwise they'd slide
+// right over it, which looks off.
 function revealCenter() {
   const centerCards = document.getElementById('center-cards');
   const { payout, tag } = evaluate(flippedCards);
 
   applyResultEffects(payout, tag);
+  positionCenterDisplay();
 
   flipMoveBatch(flippedCards, centerCards, () => {
     state = STATE.REVIEW;
     updateNewRoundButton();
+
+    const message = document.getElementById('message');
+    message.classList.add('visible');
+    void message.offsetWidth; // restart the pop-in animation
+    message.classList.add('pop');
 
     if (payout === 0) {
       // trigger the shake only now: while the cards are still flying, the
@@ -325,17 +347,15 @@ function applyResultEffects(payout, tag) {
   const isWin = payout > 0;
 
   if (tag === 'nearMiss') {
-    message.textContent = 'So knapp am Jackpot vorbei!';
+    message.textContent = 'So knapp am Jackpot vorbei! Nichts gewonnen.';
+  } else if (tag === 'none') {
+    message.textContent = 'Nichts gewonnen.';
   } else if (isWin) {
     message.textContent = `Gewinn: +${payout}€`;
-  } else {
-    message.textContent = `Verlust: -${STAKE}€`;
   }
 
-  message.classList.remove('win', 'lose', 'pop');
+  message.classList.remove('win', 'lose', 'pop', 'visible');
   message.classList.add(isWin ? 'win' : 'lose');
-  void message.offsetWidth; // restart the pop-in animation
-  message.classList.add('pop');
 
   // triggers the box-shadow / shake CSS transitions, which fade in over the
   // same 0.6s as the flight to the center
@@ -434,8 +454,10 @@ function startNewRound() {
 
     grid.innerHTML = '';
     document.getElementById('message').textContent = '';
-    document.getElementById('message').classList.remove('win', 'lose', 'pop');
+    document.getElementById('message').classList.remove('win', 'lose', 'pop', 'visible');
     document.getElementById('center-display').classList.remove('result-win', 'result-lose');
+    document.getElementById('center-display').style.top = '';
+    document.getElementById('center-display').style.transform = '';
     document.querySelectorAll('.slot').forEach((s) => {
       s.innerHTML = '';
       s.classList.remove('hidden');
@@ -480,7 +502,7 @@ function triggerGameOver() {
   const message = document.getElementById('message');
   message.textContent = 'GAME OVER – kein Guthaben mehr!';
   message.classList.remove('win', 'lose', 'pop');
-  message.classList.add('game-over');
+  message.classList.add('game-over', 'visible');
   void message.offsetWidth;
   message.classList.add('pop');
 }

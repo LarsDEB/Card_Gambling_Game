@@ -104,6 +104,11 @@ button:disabled {
   padding: 4px 20px;
   border-radius: 14px;
   transform-origin: center;
+  opacity: 0;
+}
+
+#message.visible {
+  opacity: 1;
 }
 
 #message.win {
