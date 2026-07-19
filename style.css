@@ -1,4 +1,341 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --card-width: clamp(70px, 16vw, 160px);
+  --card-height: clamp(96px, 22vw, 220px);
+  --bg: #17351d;
+  --panel: #214729;
+  --panel-light: #2c5c37;
+  --button: #c73d3d;
+  --button-hover: #de5151;
+  --gold: #f0c419;
+}
+
 body {
-    background-color: hsl(0, 0%, 20%);
-    overflow-x: hidden;
+  min-height: 100vh;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, var(--bg), #0e2413);
+  color: white;
+  overflow: hidden;
+}
+
+.container {
+  width: min(1100px, 95%);
+  margin: 24px auto 60px;
+  text-align: center;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  margin-bottom: 16px;
+}
+
+.info {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.stat-box {
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 90px;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: bold;
+  transition: transform 0.25s ease;
+}
+
+.stat-box.money .stat-value {
+  color: var(--gold);
+}
+
+.stat-value.bump {
+  transform: scale(1.25);
+}
+
+button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--button);
+  color: white;
+  cursor: pointer;
+  transition: 0.2s;
+  font-size: clamp(0.85rem, 2vw, 1rem);
+}
+
+button:hover:not(:disabled) {
+  background: var(--button-hover);
+  transform: scale(1.04);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#message {
+  min-height: 32px;
+  font-weight: bold;
+  font-size: clamp(1.1rem, 3vw, 1.6rem);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+#message.win {
+  color: #7cfc7c;
+}
+
+#message.lose {
+  color: #ff8a8a;
+}
+
+#grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--card-width));
+  gap: clamp(8px, 2vw, 16px);
+  justify-content: center;
+}
+
+.card {
+  width: var(--card-width);
+  height: var(--card-height);
+  perspective: 1000px;
+  cursor: pointer;
+}
+
+.card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-front,
+.card-back {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.6s ease;
+}
+
+.card-back {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0 2px, transparent 3px),
+    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.06) 0 1px, transparent 2px),
+    radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.06) 0 1px, transparent 2px),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 18px),
+    linear-gradient(135deg, #256d3c, #003614);
+  color: white;
+}
+.card-front {
+  transform: rotateY(180deg);
+  color: white;
+  font-weight: bold;
+  font-size: clamp(0.75rem, 1.6vw, 1.2rem);
+}
+
+.red {
+  background: #963126;
+}
+.green {
+  background: #007e34;
+}
+.blue {
+  background: #0070bb;
+}
+.yellow {
+  background: #fae900;
+}
+.black {
+  background: #020202;
+}
+
+/* placeholder left behind in the grid when a card is flipped away - fully
+   invisible, just reserves the empty space so nothing shifts */
+.card.placeholder {
+  cursor: default;
+  border: none;
+  background: transparent;
+}
+
+.table-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 28px);
+  margin-bottom: 20px;
+}
+
+.slots {
+  display: flex;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 16px);
+}
+
+.slot {
+  width: var(--card-width);
+  height: var(--card-height);
+  border: 2px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  transition: opacity 0.2s ease;
+}
+
+.slot.hidden {
+  border-color: transparent;
+}
+
+.stack {
+  position: relative;
+  width: var(--card-width);
+  height: var(--card-height);
+  pointer-events: none;
+}
+
+.stack .card {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.center-display {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2.5vw, 20px);
+  z-index: 10;
+  pointer-events: none;
+  max-width: 95vw;
+}
+
+.center-cards {
+  display: flex;
+  gap: clamp(10px, 3vw, 24px);
+}
+
+.center-cards .card {
+  width: min(calc(var(--card-width) * 1.6), 28vw);
+  height: min(calc(var(--card-height) * 1.6), 38vw);
+}
+
+.card.flying {
+  z-index: 20;
+  transition: transform 0.6s ease;
+}
+
+/* win-effect */
+.center-display.result-win .center-cards .card-front,
+.center-display.result-win .center-cards .card-back {
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.35),
+    0 0 30px 6px rgba(240, 196, 25, 0.6);
+}
+
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 16px;
+  opacity: 0.9;
+  animation: confetti-fall linear forwards;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0.4;
+  }
+}
+
+/* lose-effect */
+.center-display.result-lose .center-cards .card-front,
+.center-display.result-lose .center-cards .card-back {
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.35),
+    0 0 30px rgba(255, 40, 40, 0.8);
+}
+
+.center-display.result-lose.animation .center-cards {
+  animation: loseShake 0.45s ease;
+  transform: rotateX(18deg) scale(0.9) 0.75s;
+}
+
+@keyframes loseShake {
+  0% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-12px);
+  }
+  30% {
+    transform: translateX(12px);
+  }
+  45% {
+    transform: translateX(-8px);
+  }
+  60% {
+    transform: translateX(8px);
+  }
+  75% {
+    transform: translateX(-4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes loseFlash {
+  0% {
+    background: rgba(255, 40, 40, 0);
+  }
+  50% {
+    background: rgba(255, 40, 40, 0.4);
+  }
+  100% {
+    background: rgba(255, 40, 40, 0);
+  }
 }
