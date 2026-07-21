@@ -1,33 +1,131 @@
-// global variables
+/* =====================================================================
+   CARD GAMBLING GAME
+   ---------------------------------------------------------------------
+   Quick overview of a round's flow, to make the code below easier to
+   navigate:
+
+     1. dealOut()            - the stake is deducted, the deck is
+                                reshuffled, all cards fly from the stack
+                                into the grid.
+     2. Clicking 3 cards      - each clicked card flies into one of the
+                                3 slots up top; its spot in the grid stays
+                                behind as an invisible placeholder.
+     3. collectAndReveal()   - the remaining (unpicked) cards fly back
+                                onto the stack.
+     4. revealCenter()       - the 3 picked cards fly big into the
+                                center, the result gets evaluated and
+                                celebrated/mourned.
+     5. startNewRound()      - everything flies back onto the stack,
+                                then it's back to step 1.
+
+   The file is organized into the following sections:
+     1. Configuration & balancing
+     2. Global state
+     3. Deck helpers
+     4. Layout (card size, positioning)
+     5. FLIP animation helpers
+     6. Card DOM & selection logic (click handler)
+     7. Round flow: collecting, evaluating, showing the result
+     8. Win/lose effects (canvas confetti, reused DOM layers)
+     9. Round transitions (new round / new game / game over)
+    10. Debug tools
+    11. Bootstrap
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. CONFIGURATION & BALANCING
+   ------------------------------------------------------------------ */
+
 const STATE = {
-  PLAYING: 'playing',
-  REVIEW: 'review',
-  DEALING: 'dealing',
-  COLLECTING: 'collecting',
-  GAME_OVER: 'game_over',
+  PLAYING: 'playing', // cards are in the grid, clicking is allowed
+  COLLECTING: 'collecting', // 3rd card picked, the rest fly to the stack
+  REVIEW: 'review', // result is showing, "New round" is enabled
+  DEALING: 'dealing', // cards are flying (returning to / dealt from the stack)
+  GAME_OVER: 'game_over', // not enough money left for the next stake
 };
-const COLORS = ['red', 'green', 'blue', 'yellow', 'black'];
+
+// Only 3 colors + black instead of 4 colors + black: fewer "buckets"
+// means noticeably higher pair/triple odds, so the game doesn't feel
+// like it's always "3 different colors or a single black card".
+const COLORS = ['red', 'green', 'blue', 'black'];
+const DECK_COMPOSITION = { red: 5, green: 5, blue: 5, black: 3 }; // 18 cards
+
 const CONFETTI_COLORS = ['#f0c419', '#963126', '#007e34', '#0070bb', '#fae900', '#ffffff'];
-const DEAL_STAGGER = 40;
-const STAKE = 2;
+const PARTICLE_POOL_SIZE = 760;
+
+const DEAL_STAGGER = 40; // ms between individual cards while dealing
+const STAKE = 2; // stake per round, in play currency
 const START_MONEY = 20;
-// Only for development. Set this to false before publishing the game.
+
+// Development only - set to false before presenting.
 const DEBUG = false;
+
+// Payout table. The stake is deducted separately in dealOut(); this only
+// holds the raw payout, which is also what the message shows. "pair"
+// deliberately pays out less than the stake, but still gets the full win
+// treatment (confetti, green) - the classic slot-machine trick "Loss
+// Disguised as Win". With the deck distribution below (3 colors x 5 +
+// 3 black out of 18 cards) the expected value works out slightly
+// negative (~ -0.27 per round): you lose slowly on average, while
+// individual rounds can swing hard either way.
+const PAYOUTS = {
+  megaJackpot: 80, // 3x black (~0.1%) - a rare mega event
+  jackpot: 15, // 2x black (~5.5%)
+  triple: 6, // 3 matching colors, no black (~3.7%)
+  nearMissPair: 2, // 1x black + a pair (~11%)
+  pair: 1, // pair without black (~37%) - the "feels like a win" case
+  nearMiss: 0, // 1x black, no pair (~28%) - the "so close" tease
+  none: 0, // no match at all (~15%)
+};
+
+/* ---------------------------------------------------------------------
+   2. GLOBAL STATE
+   ------------------------------------------------------------------ */
 
 const DECK = createDeck();
 
-let cardAspect = 160 / 220;
+let cardEls = []; // persistent card DOM elements, index = deck position
+let flippedCards = []; // currently picked cards (in slots / center)
+let money = null;
+let round = 1;
+let state = STATE.PLAYING;
 
-// update if the new-round-button is disabled or not.
-function updateNewRoundButton() {
-  const roundBtn = document.getElementById('new-round-btn');
+let cardAspect = 160 / 220; // width/height ratio of a card
+let resizeTimeout = null;
 
-  roundBtn.disabled = state !== STATE.REVIEW;
+// Canvas particle system for confetti (see section 8)
+let effectCanvas;
+let effectContext;
+let particleFrame = null;
+let particlePool = [];
+
+/* ---------------------------------------------------------------------
+   3. DECK HELPERS
+   ------------------------------------------------------------------ */
+
+function createDeck() {
+  const deck = [];
+  for (const [color, count] of Object.entries(DECK_COMPOSITION)) {
+    deck.push(...Array(count).fill(color));
+  }
+  return deck;
 }
 
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const random = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[random]] = [arr[random], arr[i]];
+  }
+}
+
+/* ---------------------------------------------------------------------
+   4. LAYOUT
+   ------------------------------------------------------------------ */
+
 // Computes the largest card size that lets the whole grid (all cards, in
-// however many rows the auto-fill grid ends up with) fit on screen without
-// needing to scroll, and writes it to the --card-width/--card-height vars.
+// however many rows the auto-fill grid ends up with) fit in the viewport
+// without scrolling, and writes it to the --card-width/--card-height CSS
+// variables.
 function fitCardSize() {
   const container = document.querySelector('.container');
   const grid = document.getElementById('grid');
@@ -65,48 +163,32 @@ function fitCardSize() {
   );
 }
 
-let resizeTimeout = null;
+// Positions the center display (message + big cards) so its top aligns
+// with the grid's top edge - the grid is already sized/positioned to fit
+// the viewport by fitCardSize(), so reusing that reference point is
+// simpler than recomputing it here. Must run before the cards start
+// flying.
+function positionCenterDisplay() {
+  const centerDisplay = document.getElementById('center-display');
+  const grid = document.getElementById('grid');
+  const gridTop = grid.getBoundingClientRect().top;
+
+  centerDisplay.style.top = `${gridTop}px`;
+  centerDisplay.style.transform = 'translate(-50%, 0)';
+}
+
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(fitCardSize, 120);
 });
 
-// global variables
-let cardEls = []; // persistent card elements, index === deck/grid position
-let flippedCards = []; // DOM elements currently selected (in slots / center)
-let money = null;
-let round = 1;
-let state = STATE.PLAYING;
-let effectCanvas;
-let effectContext;
-let particleFrame = null;
-let particlePool = [];
+/* ---------------------------------------------------------------------
+   5. FLIP ANIMATION HELPERS
+   ------------------------------------------------------------------ */
 
-const PARTICLE_POOL_SIZE = 760;
-
-// functions
-function createDeck() {
-  const deck = [];
-
-  deck.push(...Array(2).fill('black'));
-  deck.push(...Array(4).fill('red'));
-  deck.push(...Array(4).fill('green'));
-  deck.push(...Array(4).fill('blue'));
-  deck.push(...Array(4).fill('yellow'));
-
-  return deck;
-}
-
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const random = Math.floor(Math.random() * (i + 1));
-
-    [arr[i], arr[random]] = [arr[random], arr[i]];
-  }
-}
-
-// Moves `el` into `toParent`, keeping it visually in place, then animates
-// it to its new position/size (FLIP technique).
+// Moves `el` seamlessly to `toParent`: records its current position,
+// reparents it, then animates from the old spot to the new one (the FLIP
+// technique: First, Last, Invert, Play).
 function flipMove(el, toParent, onDone) {
   const first = el.getBoundingClientRect();
 
@@ -142,11 +224,11 @@ function flipMove(el, toParent, onDone) {
   el.addEventListener('transitionend', handler);
 }
 
-// Moves several elements into `toParent` at once and animates all of them
-// together (batched FLIP). Measuring/appending/animating as a batch avoids
-// stale position data: if elements were moved one at a time into a flexbox,
-// earlier ones would get a wrong target rect since the layout keeps
-// shifting as later siblings are added, causing a visible jump.
+// Moves several elements at once (batched FLIP). Measure ALL starting
+// positions first, THEN append all of them, THEN measure the target
+// positions - otherwise appending one at a time (e.g. into a flexbox)
+// would reflow the already-moved elements' layout on every step, causing
+// visible jumps.
 function flipMoveBatch(elements, toParent, onAllDone) {
   const firsts = elements.map((el) => el.getBoundingClientRect());
 
@@ -194,7 +276,11 @@ function flipMoveBatch(elements, toParent, onAllDone) {
   });
 }
 
-// Builds the physical card elements once. They are reused/reshuffled for
+/* ---------------------------------------------------------------------
+   6. CARD DOM & SELECTION LOGIC
+   ------------------------------------------------------------------ */
+
+// Builds the physical card DOM elements once. They get reused/reshuffled
 // every round instead of being recreated, so they can be animated back to
 // the stack and dealt out again.
 function buildCardElements() {
@@ -216,48 +302,55 @@ function buildCardElements() {
 
     const cardObj = { el: card, front };
 
-    card.addEventListener('click', () => {
-      if (state !== STATE.PLAYING) return;
-      if (card.classList.contains('flipped')) return;
-
-      card.classList.add('flipped');
-
-      // lock in the selection (and block further clicks) immediately, even
-      // though the card only visually flies to its slot a bit later
-      const slotIndex = flippedCards.length;
-      flippedCards.push(card);
-      const isThird = flippedCards.length === 3;
-
-      if (isThird) {
-        state = STATE.COLLECTING;
-        updateNewRoundButton();
-      }
-
-      setTimeout(() => {
-        const grid = document.getElementById('grid');
-        const slot = document.querySelectorAll('.slot')[slotIndex];
-
-        const index = [...grid.children].indexOf(card);
-
-        flipMove(card, slot);
-
-        const placeholder = document.createElement('div');
-        placeholder.classList.add('card', 'placeholder');
-        grid.insertBefore(placeholder, grid.children[index] ?? null);
-
-        setTimeout(() => slot.classList.add('invisible'), 650);
-
-        if (isThird) {
-          setTimeout(collectAndReveal, 650);
-        }
-      }, 650);
-    });
+    card.addEventListener('click', () => handleCardClick(cardObj));
 
     return cardObj;
   });
 }
 
-// Applies a (shuffled) color order to the persistent card elements.
+// Handles a click on a card in the grid: picks it. The actual flight to
+// its slot is deliberately delayed by 650ms so the revealed color is
+// visible for a moment where it is - but the selection and state change
+// (locking further clicks) happen IMMEDIATELY, so a 4th card can't be
+// picked during that delay.
+function handleCardClick(card) {
+  if (state !== STATE.PLAYING) return;
+  if (card.el.classList.contains('flipped')) return;
+
+  card.el.classList.add('flipped');
+
+  const slotIndex = flippedCards.length;
+  flippedCards.push(card.el);
+  const isThird = flippedCards.length === 3;
+
+  if (isThird) {
+    state = STATE.COLLECTING;
+    syncInteractionState();
+  }
+
+  setTimeout(() => {
+    const grid = document.getElementById('grid');
+    const slot = document.querySelectorAll('.slot')[slotIndex];
+    const index = [...grid.children].indexOf(card.el);
+
+    flipMove(card.el, slot);
+
+    // Placeholder at the card's original grid position, so the other
+    // cards don't shift into the gap.
+    const placeholder = document.createElement('div');
+    placeholder.classList.add('card', 'placeholder');
+    grid.insertBefore(placeholder, grid.children[index] ?? null);
+
+    setTimeout(() => slot.classList.add('invisible'), 650);
+
+    if (isThird) {
+      setTimeout(collectAndReveal, 650);
+    }
+  }, 650);
+}
+
+// Assigns a (shuffled) color order to the persistent card elements,
+// without recreating them.
 function assignColors(colors) {
   cardEls.forEach((card, i) => {
     const color = colors[i];
@@ -269,12 +362,17 @@ function assignColors(colors) {
   });
 }
 
+/* ---------------------------------------------------------------------
+   7. ROUND FLOW: COLLECTING, EVALUATING, SHOWING THE RESULT
+   ------------------------------------------------------------------ */
+
+// The unpicked cards fly back onto the stack, starting at index 0. Each
+// one leaves behind a placeholder (just like on click), so the remaining
+// cards don't shift.
 function collectAndReveal() {
   const stack = document.getElementById('stack');
   const grid = document.getElementById('grid');
 
-  // starting at index 0; each card leaves a placeholder behind so the
-  // others don't shift into the freed-up grid cell
   const remaining = cardEls.filter((c) => !flippedCards.includes(c.el));
 
   let pending = remaining.length;
@@ -299,25 +397,11 @@ function collectAndReveal() {
   });
 }
 
-// Positions the center-display so its top aligns with the grid's top edge
-// - the grid is already sized/positioned to fit the viewport (fitCardSize),
-// so reusing that reference point is simpler and more robust than
-// recomputing available space here. Must run before the cards start flying.
-function positionCenterDisplay() {
-  const centerDisplay = document.getElementById('center-display');
-  const grid = document.getElementById('grid');
-
-  const gridTop = grid.getBoundingClientRect().top;
-
-  centerDisplay.style.top = `${gridTop}px`;
-  centerDisplay.style.transform = 'translate(-50%, 0)';
-}
-
-// Moves the 3 selected cards from their slots into the center display, all
-// together (so they land as a stable group with no mid-flight layout jump).
-// The win/lose glow fades in during the flight, but the message text only
-// pops in once the cards have actually landed - otherwise they'd slide
-// right over it, which looks off.
+// Moves the 3 picked cards from their slots into the center display
+// together (batched, so they land as a stable group instead of jumping
+// mid-flight). The win/lose glow fades in during the flight, but the
+// message text only pops in once the cards have actually landed -
+// otherwise they'd slide right over it.
 function revealCenter() {
   const centerCards = document.getElementById('center-cards');
   const { payout, tag } = evaluate(flippedCards);
@@ -327,7 +411,7 @@ function revealCenter() {
 
   flipMoveBatch(flippedCards, centerCards, () => {
     state = STATE.REVIEW;
-    updateNewRoundButton();
+    syncInteractionState();
 
     const message = document.getElementById('message');
     message.classList.add('visible');
@@ -335,21 +419,47 @@ function revealCenter() {
     message.classList.add('pop');
 
     if (payout === 0) {
-      // trigger the shake only now: while the cards are still flying, the
-      // inline FLIP transform would just override/hide a CSS animation
+      // Trigger the shake only now: while the cards are still flying,
+      // the inline FLIP transform would just override/hide a CSS
+      // animation.
       centerCards.classList.add(tag === 'nearMiss' ? 'shake-hard' : 'shake');
       setTimeout(() => centerCards.classList.remove('shake', 'shake-hard'), 600);
     }
   });
 }
 
+// Evaluates 3 revealed cards. Special rules for the addictiveness factor:
+// 3x black is the rare mega event, 2x black is the jackpot, and 1x black
+// without a pair is the "so close to the jackpot" near-miss.
+function evaluate(flippedCards) {
+  const counts = {};
+  for (const card of flippedCards) {
+    const color = card.querySelector('.card-front').textContent;
+    counts[color] = (counts[color] || 0) + 1;
+  }
+
+  const blackCount = counts.black || 0;
+  const hasTriple = Object.values(counts).includes(3);
+  const hasPair = Object.values(counts).includes(2);
+
+  if (blackCount === 3) return { payout: PAYOUTS.megaJackpot, tag: 'megaJackpot' };
+  if (blackCount === 2) return { payout: PAYOUTS.jackpot, tag: 'jackpot' };
+  if (hasTriple) return { payout: PAYOUTS.triple, tag: 'triple' };
+  if (blackCount === 1 && hasPair) return { payout: PAYOUTS.nearMissPair, tag: 'nearMissPair' };
+  if (hasPair) return { payout: PAYOUTS.pair, tag: 'pair' };
+  if (blackCount === 1) return { payout: PAYOUTS.nearMiss, tag: 'nearMiss' };
+  return { payout: PAYOUTS.none, tag: 'none' };
+}
+
+// Sets the message, colors, and effect triggers for the round result. The
+// raw payout is what gets shown/celebrated - deliberately NOT the net
+// amount (payout minus the stake, which was already deducted in
+// dealOut()). A "pair" pays out less than the stake but still gets the
+// full win treatment (see the PAYOUTS comment above).
 function applyResultEffects(payout, tag) {
   const message = document.getElementById('message');
   const centerDisplay = document.getElementById('center-display');
 
-  // the raw payout is what gets shown/celebrated - deliberately not the net
-  // (payout minus the stake already paid in dealOut). A "pair" pays out
-  // less than the stake but still gets the full win treatment.
   setMoney(money + payout);
 
   const isWin = payout > 0;
@@ -365,8 +475,8 @@ function applyResultEffects(payout, tag) {
   message.classList.remove('win', 'lose', 'pop', 'visible');
   message.classList.add(isWin ? 'win' : 'lose');
 
-  // triggers the box-shadow / shake CSS transitions, which fade in over the
-  // same 0.6s as the flight to the center
+  // Triggers the box-shadow/shake CSS transitions, which fade in over the
+  // same 0.6s as the flight to the center.
   centerDisplay.classList.add(isWin ? 'result-win' : 'result-lose');
 
   if (isWin) {
@@ -374,32 +484,6 @@ function applyResultEffects(payout, tag) {
   } else {
     loseEffect(tag === 'nearMiss');
   }
-}
-
-// Suchfaktor-Design: 2 schwarze Karten sind der seltene Jackpot, 1 schwarze
-// Karte ohne Paar ist der "Beinahe-Jackpot"-Beinahe-Verlust. Der Einsatz
-// wird separat beim Austeilen abgezogen (siehe dealOut) - hier wird nur der
-// rohe Gewinn zurückgegeben, der in der Nachricht auch so angezeigt wird.
-// Das "Paar" zahlt absichtlich weniger als den Einsatz zurueck: es wird als
-// Gewinn gefeiert (Konfetti, gruen), obwohl es netto ein Verlust ist - der
-// klassische Slot-Machine-Trick "Loss Disguised as Win".
-function evaluate(flippedCards) {
-  const counts = {};
-  for (const card of flippedCards) {
-    const color = card.querySelector('.card-front').textContent;
-    counts[color] = (counts[color] || 0) + 1;
-  }
-
-  const blackCount = counts.black || 0;
-  const hasTriple = Object.values(counts).includes(3);
-  const hasPair = Object.values(counts).includes(2);
-
-  if (blackCount === 2) return { payout: 40, tag: 'jackpot' };
-  if (hasTriple) return { payout: 10, tag: 'triple' };
-  if (blackCount === 1 && hasPair) return { payout: 4, tag: 'nearMissPair' };
-  if (hasPair) return { payout: 1, tag: 'pair' };
-  if (blackCount === 1) return { payout: 0, tag: 'nearMiss' };
-  return { payout: 0, tag: 'none' };
 }
 
 function setMoney(value) {
@@ -411,6 +495,13 @@ function setMoney(value) {
   el.classList.add('bump');
 }
 
+/* ---------------------------------------------------------------------
+   8. WIN/LOSE EFFECTS
+   ------------------------------------------------------------------ */
+
+// Confetti runs entirely through canvas + a reused particle pool instead
+// of hundreds of individual DOM elements - for the jackpot that would
+// otherwise be hundreds of createElement()/remove() calls per win.
 function setupEffects() {
   effectCanvas = document.getElementById('effects-canvas');
   effectContext = effectCanvas.getContext('2d');
@@ -427,16 +518,8 @@ function resizeEffectsCanvas() {
   effectContext.setTransform(scale, 0, 0, scale, 0, 0);
 }
 
-function restartEffectLayer(id, ...classes) {
-  const layer = document.getElementById(id);
-  layer.className = layer.className.split(' ')[0];
-  void layer.offsetWidth;
-  layer.classList.add('active', ...classes);
-  return layer;
-}
-
 function launchConfetti(count, tag) {
-  const isJackpot = tag === 'jackpot';
+  const isJackpot = tag === 'jackpot' || tag === 'megaJackpot';
   const isTriple = tag === 'triple';
   const now = performance.now();
   const width = window.innerWidth;
@@ -487,6 +570,7 @@ function renderParticles(now) {
     const opacity = Math.min(1, elapsed / 110) * Math.min(1, (particle.duration - elapsed) / 500);
     const x = particle.x + particle.vx * seconds;
     const y = particle.y + particle.vy * seconds + 0.5 * particle.gravity * seconds * seconds;
+
     effectContext.save();
     effectContext.globalAlpha = opacity;
     effectContext.fillStyle = particle.color;
@@ -524,48 +608,64 @@ function drawParticle(particle) {
   }
 }
 
+// Resets a reused effect layer (by ID) back to its base class, forces a
+// reflow, then re-adds 'active' (+ any extra classes). Since the actual
+// @keyframes animations are gated behind ".active", this reliably
+// restarts an animation that already played once, without recreating the
+// element.
+function restartEffectLayer(id, ...classes) {
+  const layer = document.getElementById(id);
+  layer.className = layer.className.split(' ')[0];
+  void layer.offsetWidth;
+  layer.classList.add('active', ...classes);
+  return layer;
+}
+
+// Only the triple and jackpot get the full-screen flash + banner; smaller
+// wins just get confetti so it doesn't feel too heavy-handed.
 function winEffect(tag, payout) {
-  const isJackpot = tag === 'jackpot';
+  const isMega = tag === 'megaJackpot';
+  const isJackpot = tag === 'jackpot' || isMega;
   const isTriple = tag === 'triple';
   const isMajorWin = isJackpot || isTriple;
 
-  // Only the Dreier and jackpot earn the full-screen flash + banner; smaller
-  // wins just get confetti so they don't feel as heavy-handed.
   if (isMajorWin) {
     restartEffectLayer('win-flash-layer', 'major', ...(isJackpot ? ['jackpot'] : []));
 
     const banner = document.getElementById('win-banner');
-    banner.textContent = isJackpot ? 'JACKPOT!' : 'DREIER!';
+    banner.textContent = isMega ? 'MEGA JACKPOT!' : isJackpot ? 'JACKPOT!' : 'DREIER!';
     restartEffectLayer('win-banner', isJackpot ? 'jackpot' : 'triple');
   }
 
-  if (isJackpot) createJackpotOverload(payout);
+  if (isJackpot) createJackpotOverload(payout, isMega);
 
-  const pieceCount = isJackpot ? 260 : isTriple ? 160 : 90;
+  const pieceCount = isMega ? 420 : isJackpot ? 260 : isTriple ? 160 : 90;
   launchConfetti(pieceCount, tag);
 }
 
-function createJackpotOverload(payout) {
+// Re-randomizes the 8 burst elements and 3 echo texts that are already in
+// the HTML (via inline styles) instead of creating new DOM nodes for
+// every jackpot, then triggers the (".active"-gated) animation.
+function createJackpotOverload(payout, isMega) {
   const spectacle = document.getElementById('jackpot-spectacle');
 
   spectacle.querySelectorAll('.jackpot-burst').forEach((burst) => {
     burst.style.left = `${8 + Math.random() * 84}%`;
     burst.style.top = `${12 + Math.random() * 66}%`;
     burst.style.setProperty('--burst-delay', `${Math.random() * 1.4}s`);
-    burst.style.setProperty('--burst-size', `${180 + Math.random() * 260}px`);
+    burst.style.setProperty('--burst-size', `${(isMega ? 220 : 180) + Math.random() * 260}px`);
   });
 
+  const echoLabel = isMega ? 'MEGA JACKPOT!' : 'JACKPOT!';
   const echoes = spectacle.querySelectorAll('.jackpot-echo');
-  const echoTexts = ['JACKPOT!', `${payout}€`, 'JACKPOT!'];
+  const echoTexts = [echoLabel, `${payout}€`, echoLabel];
   echoes.forEach((echo, index) => {
-    echo.textContent = echoTexts[index] ?? 'JACKPOT!';
+    echo.textContent = echoTexts[index] ?? echoLabel;
     echo.style.setProperty('--echo-delay', `${0.25 + index * 0.42}s`);
     echo.style.setProperty('--echo-turn', `${index % 2 === 0 ? -1 : 1}deg`);
   });
 
   restartEffectLayer('jackpot-spectacle');
-  setTimeout(() => restartEffectLayer('jackpot-spectacle'), 1000);
-  setTimeout(() => restartEffectLayer('jackpot-spectacle'), 1000);
   setTimeout(() => spectacle.classList.remove('active'), 4800);
 
   const game = document.querySelector('.container');
@@ -579,64 +679,36 @@ function loseEffect(hard) {
   restartEffectLayer('lose-flash-layer', ...(hard ? ['hard'] : []));
 }
 
-// Animates the 3 revealed cards back onto the stack, then deals the whole
-// (reshuffled) deck from the stack out onto the grid.
+/* ---------------------------------------------------------------------
+   9. ROUND TRANSITIONS
+   ------------------------------------------------------------------ */
+
+// Keeps the button state and "can the cards in the grid be interacted
+// with" in sync with the global `state`. Called on every state
+// transition. The #grid.locked class makes sure (via CSS) that neither
+// the hover-grow effect nor the pointer cursor apply while it's not
+// actually the player's turn (e.g. while 3 cards are already picked, or
+// while cards are being dealt/collected).
+function syncInteractionState() {
+  document.getElementById('new-round-btn').disabled = state !== STATE.REVIEW;
+  document.getElementById('grid').classList.toggle('locked', state !== STATE.PLAYING);
+}
+
+// Flies the 3 revealed cards back onto the stack, then deals the whole
+// (reshuffled) deck back out.
 function startNewRound() {
   if (state === STATE.DEALING) return;
 
   state = STATE.DEALING;
-  updateNewRoundButton();
+  syncInteractionState();
 
-  // pop the message away right as the cards start leaving, instead of
-  // letting it linger until the whole round-reset is done
+  // Hide the message right as the cards start leaving, instead of
+  // letting it linger until the whole round reset is done.
   document.getElementById('message').classList.remove('visible');
 
   const stack = document.getElementById('stack');
   const grid = document.getElementById('grid');
   const centerCards = flippedCards.slice();
-
-  const dealOut = () => {
-    if (money < STAKE) {
-      triggerGameOver();
-      return;
-    }
-
-    grid.innerHTML = '';
-    document.getElementById('message').textContent = '';
-    document.getElementById('message').classList.remove('win', 'lose', 'pop', 'visible');
-    document.getElementById('center-display').classList.remove('result-win', 'result-lose');
-    document.getElementById('center-display').style.top = '';
-    document.getElementById('center-display').style.transform = '';
-    document.querySelectorAll('.slot').forEach((s, index) => {
-      s.innerHTML = '';
-      s.style.setProperty('--slot-delay', `${index * 110}ms`);
-      s.classList.remove('invisible', 'dealing');
-      // Force the reset to be painted first; otherwise the browser would
-      // merge both class changes and skip the entrance animation.
-      void s.offsetWidth;
-      s.classList.add('dealing');
-    });
-
-    setMoney(money - STAKE);
-
-    shuffle(DECK);
-    assignColors(DECK);
-    flippedCards = [];
-
-    cardEls.forEach((card, i) => {
-      setTimeout(() => {
-        flipMove(card.el, grid);
-      }, i * DEAL_STAGGER);
-    });
-
-    setTimeout(
-      () => {
-        state = STATE.PLAYING;
-        updateNewRoundButton();
-      },
-      cardEls.length * DEAL_STAGGER + 650
-    );
-  };
 
   if (centerCards.length === 0) {
     // very first deal: nothing to return, cards start life on the stack
@@ -649,9 +721,55 @@ function startNewRound() {
   flipMoveBatch(centerCards, stack, dealOut);
 }
 
+// Deducts the stake and deals out the deck. Bails into game-over if the
+// stake can no longer be afforded.
+function dealOut() {
+  if (money < STAKE) {
+    triggerGameOver();
+    return;
+  }
+
+  const grid = document.getElementById('grid');
+
+  grid.innerHTML = '';
+  document.getElementById('message').textContent = '';
+  document.getElementById('message').classList.remove('win', 'lose', 'pop', 'visible');
+  document.getElementById('center-display').classList.remove('result-win', 'result-lose');
+  document.getElementById('center-display').style.top = '';
+  document.getElementById('center-display').style.transform = '';
+
+  document.querySelectorAll('.slot').forEach((s, index) => {
+    s.innerHTML = '';
+    s.style.setProperty('--slot-delay', `${index * 110}ms`);
+    s.classList.remove('invisible', 'dealing');
+    // Let the reset render first, otherwise the browser would batch both
+    // class changes together and skip the entrance animation.
+    void s.offsetWidth;
+    s.classList.add('dealing');
+  });
+
+  setMoney(money - STAKE);
+
+  shuffle(DECK);
+  assignColors(DECK);
+  flippedCards = [];
+
+  cardEls.forEach((card, i) => {
+    setTimeout(() => flipMove(card.el, grid), i * DEAL_STAGGER);
+  });
+
+  setTimeout(
+    () => {
+      state = STATE.PLAYING;
+      syncInteractionState();
+    },
+    cardEls.length * DEAL_STAGGER + 650
+  );
+}
+
 function triggerGameOver() {
   state = STATE.GAME_OVER;
-  updateNewRoundButton();
+  syncInteractionState();
 
   const message = document.getElementById('message');
   message.textContent = 'GAME OVER - kein Guthaben mehr!';
@@ -661,8 +779,28 @@ function triggerGameOver() {
   message.classList.add('pop');
 }
 
-// Lets us inspect every result effect without playing through rounds or
-// changing the actual balance/round state.
+function newRound() {
+  if (state !== STATE.REVIEW) return;
+  round += 1;
+  document.getElementById('round').textContent = round;
+  startNewRound();
+}
+
+function newGame() {
+  if (state === STATE.DEALING) return;
+  document.getElementById('message').classList.remove('game-over');
+  setMoney(START_MONEY);
+  round = 1;
+  document.getElementById('round').textContent = round;
+  startNewRound();
+}
+
+/* ---------------------------------------------------------------------
+   10. DEBUG TOOLS
+   ------------------------------------------------------------------ */
+
+// Shows each result effect in isolation, without playing an actual round
+// or changing money/round count.
 function previewResult({ payout, tag, label }) {
   const message = document.getElementById('message');
   const centerDisplay = document.getElementById('center-display');
@@ -687,22 +825,26 @@ function previewResult({ payout, tag, label }) {
 }
 
 function setupDebugControls() {
-  if (!DEBUG) return document.querySelector('#debug-controls').classList.add('hidden');
-
   const controls = document.getElementById('debug-controls');
+  if (!DEBUG) {
+    controls.classList.add('hidden');
+    return;
+  }
+
   const events = [
-    { payout: 40, tag: 'jackpot', label: 'Test: JACKPOT!' },
-    { payout: 10, tag: 'triple', label: 'Test: Dreier' },
-    { payout: 4, tag: 'nearMissPair', label: 'Test: Beinahe-Jackpot mit Paar' },
-    { payout: 1, tag: 'pair', label: 'Test: Paar' },
-    { payout: 0, tag: 'nearMiss', label: 'Test: So knapp am Jackpot vorbei!' },
-    { payout: 0, tag: 'none', label: 'Test: Nichts gewonnen.' },
+    { payout: PAYOUTS.megaJackpot, tag: 'megaJackpot', label: 'MEGA JACKPOT (3 schwarz)' },
+    { payout: PAYOUTS.jackpot, tag: 'jackpot', label: 'Jackpot (2 schwarz)' },
+    { payout: PAYOUTS.triple, tag: 'triple', label: 'Dreier' },
+    { payout: PAYOUTS.nearMissPair, tag: 'nearMissPair', label: 'Beinahe-Jackpot mit Paar' },
+    { payout: PAYOUTS.pair, tag: 'pair', label: 'Paar' },
+    { payout: PAYOUTS.nearMiss, tag: 'nearMiss', label: 'So knapp am Jackpot vorbei!' },
+    { payout: PAYOUTS.none, tag: 'none', label: 'Nichts gewonnen' },
   ];
 
   events.forEach((event) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = event.label.replace('Test: ', '');
+    button.textContent = event.label;
     button.addEventListener('click', () => previewResult(event));
     controls.appendChild(button);
   });
@@ -710,29 +852,12 @@ function setupDebugControls() {
   controls.hidden = false;
 }
 
-function newRound() {
-  if (state !== STATE.REVIEW) return;
-  round += 1;
-  document.getElementById('round').textContent = round;
-  startNewRound();
-}
+/* ---------------------------------------------------------------------
+   11. BOOTSTRAP
+   ------------------------------------------------------------------ */
 
-function newGame() {
-  if (state === STATE.DEALING) return;
-  document.getElementById('message').classList.remove('game-over');
-  setMoney(START_MONEY);
-  round = 1;
-  document.getElementById('round').textContent = round;
-  startNewRound();
-}
-
-document.querySelector('#new-game-btn').addEventListener('click', () => {
-  newGame();
-});
-
-document.querySelector('#new-round-btn').addEventListener('click', () => {
-  newRound();
-});
+document.querySelector('#new-game-btn').addEventListener('click', () => newGame());
+document.querySelector('#new-round-btn').addEventListener('click', () => newRound());
 
 fitCardSize();
 setupEffects();

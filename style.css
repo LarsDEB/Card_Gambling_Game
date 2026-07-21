@@ -1,3 +1,22 @@
+/* =====================================================================
+   CARD GAMBLING GAME - STYLES
+   ---------------------------------------------------------------------
+   Sections:
+     1. Base & Variables
+     2. Header (Stats, Buttons)
+     3. Result Message
+     4. Grid & Debug Panel
+     5. Cards (Grid and generic card styles)
+     6. Table (Slots, Stack)
+     7. Center Display (large cards + outcome glow)
+     8. Win Effects (Flash, Banner, Jackpot Spectacle)
+     9. Loss Effects (Shake, Flash)
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. BASE & VARIABLES
+   ------------------------------------------------------------------ */
+
 * {
   margin: 0;
   padding: 0;
@@ -37,6 +56,10 @@ h1 {
   font-size: clamp(1.5rem, 4vw, 2.2rem);
   margin-bottom: 16px;
 }
+
+/* ---------------------------------------------------------------------
+   2. HEADER (Stats, Buttons)
+   ------------------------------------------------------------------ */
 
 .info {
   display: flex;
@@ -99,6 +122,10 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------------------------------------------------------------------
+   3. RESULT MESSAGE
+   ------------------------------------------------------------------ */
 
 #message {
   min-height: 40px;
@@ -168,6 +195,10 @@ button:disabled {
   }
 }
 
+/* ---------------------------------------------------------------------
+   4. GRID & DEBUG-PANEL
+   ------------------------------------------------------------------ */
+
 #grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--card-width));
@@ -217,6 +248,10 @@ button:disabled {
   background: #4776ba;
 }
 
+/* ---------------------------------------------------------------------
+   5. CARDS
+   ------------------------------------------------------------------ */
+
 .card {
   width: var(--card-width);
   height: var(--card-height);
@@ -226,11 +261,25 @@ button:disabled {
 }
 
 /* Scale the whole card, not only its back. The flip already uses transform
-   on .card-inner, so this keeps both animations independent. */
-.card:not(.flipped):not(.placeholder):hover {
+   on .card-inner, so this keeps both animations independent. Excludes
+   .flying: hovering a card mid-FLIP-animation would change its animated
+   transform target mid-flight, making the transition restart from scratch
+   and look like it's crawling. */
+.card:not(.flipped):not(.placeholder):not(.flying):hover {
   position: relative;
   z-index: 1;
   transform: scale(1.05);
+}
+
+/* While the grid is locked (anything other than "my turn to pick": 3rd
+   card already chosen, cards mid-deal, etc.) cards should neither look
+   clickable nor grow on hover. */
+#grid.locked .card:hover {
+  transform: none;
+}
+
+#grid.locked .card {
+  cursor: default;
 }
 
 .card-inner {
@@ -286,9 +335,6 @@ button:disabled {
 .blue {
   background: #0070bb;
 }
-.yellow {
-  background: #fae900;
-}
 .black {
   background: #020202;
 }
@@ -300,6 +346,10 @@ button:disabled {
   border: none;
   background: transparent;
 }
+
+/* ---------------------------------------------------------------------
+   6. TABLE (Slots, Stack)
+   ------------------------------------------------------------------ */
 
 .table-top {
   display: flex;
@@ -360,6 +410,10 @@ button:disabled {
   left: 0;
 }
 
+/* ---------------------------------------------------------------------
+   7. CENTER DISPLAY (large cards + outcome glow)
+   ------------------------------------------------------------------ */
+
 .center-display {
   position: fixed;
   top: 50%;
@@ -396,6 +450,10 @@ button:disabled {
     0 8px 20px rgba(0, 0, 0, 0.35),
     0 0 30px 6px rgba(240, 196, 25, 0.6);
 }
+
+/* ---------------------------------------------------------------------
+   8. WIN EFFECTS (Flash, Banner, Jackpot Spectacle)
+   ------------------------------------------------------------------ */
 
 .win-flash {
   position: fixed;
@@ -684,7 +742,10 @@ button:disabled {
   }
 }
 
-/* lose-effect */
+/* ---------------------------------------------------------------------
+   9. LOSS EFFECTS (Shake, Flash)
+   ------------------------------------------------------------------ */
+
 .center-display.result-lose .center-cards .card-front,
 .center-display.result-lose .center-cards .card-back {
   box-shadow:
