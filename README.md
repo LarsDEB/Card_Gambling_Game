@@ -1,59 +1,70 @@
 # Card Gambling Game
 
-A browser-based card game with animated card dealing, a currency system, win/loss feedback, and jackpot moments.
+> A browser-based card gambling game with animated dealing, flip effects, money tracking, and dramatic win/lose reactions.
 
-![Preview](assets/preview.mp4)
+<p align="center">
+  <img src="assets/jackpot.jpg" alt="Jackpot celebration" width="280" />
+  <img src="assets/win.jpg" alt="Win screen" width="280" />
+  <img src="assets/normal-setup.jpg" alt="Game over screen" width="280" />
+</p>
 
 ## Features
 
-- Animated card logic with flip and deal effects.
-- Money system with a bet per round.
-- Evaluation of 3 drawn cards.
-- Win, loss, and jackpot animations.
-- Responsive design for desktop and smaller screens.
-- Test mode for quick result previews during development.
+- Animated card dealing and flipping.
+- Money and round tracking.
+- Win, lose, and jackpot effects.
+- Responsive layout for different screen sizes.
+- Simple and easy-to-understand code structure.
 
-## Gameplay
+## Preview
 
-In each round, three cards are selected.  
-Depending on the combination, you’ll win, lose, or trigger a special jackpot moment.
+The game includes dramatic result animations:
+
+- Jackpot celebration.
+- Win glow and confetti.
+- Loss shake and red flash.
+
+
+## How to Run
+
+### Download
+
+1. Click the green **Code** button on GitHub.
+2. Choose **Download ZIP**.
+3. Extract the ZIP file.
+4. Open `index.html`.
+
+### Clone Repository
+
+in the Terminal write:
+```bash
+git clone git@github.com:LarsDEB/Card_Gambling_Game.git
+```
+
+
+## Project Structure
+
+```
+.
+├── index.html
+├── style.css
+├── script.js
+└── assets/
+    ├── preview.gif
+    ├── jackpot.png
+    ├── win.png
+    └── game-over.png
+```
+
+## How It Works
+
+- The game creates a shuffled deck.
+- You reveal cards one by one.
+- After three cards are revealed, the result is evaluated.
+- The game then shows the result with animations and updates your money.
 
 ## Tech Stack
 
 - HTML
 - CSS
 - JavaScript
-
-## Project Structure
-
-```bash
-.
-├── index.html
-├── style.css
-├── script.js
-└── assets/
-    └── preview.gif
-```
-
-## Getting Started
-
-1. Clone or download the repository.
-2. Open `index.html` in your browser.
-3. Play.
-
-## Notes
-
-- This is a school project and is intentionally designed to be easy to understand.
-- The animations and effects are optimized for a good balance between visuals and performance.
-
-## Roadmap
-
-- Additional card combinations.
-- Even more visual effects.
-- Optional high score or statistics mode.
-
-## License
-
-This project is intended for educational and personal use.
-
-Translated with DeepL.com (free version)
